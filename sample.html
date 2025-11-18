@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Property Poster</title>
+  <style>
+    :root{
+      --bg1: #ffe9e2;
+      --bg2: #f6d5e4;
+      --accent: #2b3650;
+      --tag-bg: rgba(255,255,255,0.85);
+      --muted: #6b6b6b;
+    }
+    *{box-sizing:border-box}
+    body{
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: radial-gradient(circle at 10% 10%, #f0f6ff 0%, #ffffff 40%);
+      padding: 30px;
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+      min-height:100vh;
+    }
+
+    .poster-wrap{
+      width:380px;
+      border-radius:22px;
+      padding:22px;
+      background: linear-gradient(180deg,var(--bg1),var(--bg2));
+      box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+      color:var(--accent);
+      position:relative;
+      overflow:hidden;
+      border:6px solid rgba(0,0,0,0.03);
+    }
+
+    /* small top chip */
+    .chip{
+      position:absolute;
+      top:18px;
+      right:18px;
+      font-size:11px;
+      background:rgba(255,255,255,0.9);
+      padding:6px 10px;
+      border-radius:18px;
+      box-shadow:0 4px 8px rgba(0,0,0,0.06);
+      letter-spacing:0.6px;
+    }
+
+    h1{
+      margin:10px 0 4px 0;
+      font-size:22px;
+      letter-spacing:1px;
+      text-transform:uppercase;
+    }
+    .sub{
+      margin:0 0 8px 0;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .location{
+      margin-bottom:12px;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .image-box{
+      height:120px;
+      width:100%;
+      background:linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.02));
+      border-radius:14px;
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      padding:10px;
+      overflow:hidden;
+      margin-bottom:14px;
+    }
+    .image-box img{
+      height:100%;
+      max-width:100%;
+      object-fit:cover;
+      border-radius:8px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.08) inset;
+    }
+
+    .tags{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:18px;
+    }
+    .tag{
+      background:var(--tag-bg);
+      padding:8px 12px;
+      border-radius:999px;
+      font-size:13px;
+      box-shadow:0 6px 12px rgba(0,0,0,0.03);
+    }
+
+    .price{
+      font-weight:800;
+      font-size:22px;
+      color:#b61b1b; /* rich red */
+      margin-bottom:10px;
+    }
+
+    .contact{
+      font-size:13px;
+      color:var(--accent);
+      margin-bottom:6px;
+    }
+    .contact .muted{color:var(--muted);display:block;font-size:12px;margin-top:6px}
+
+    .footer-brand{
+      position:absolute;
+      bottom:18px;
+      right:18px;
+      color:#1f355a;
+      font-weight:700;
+      letter-spacing:1.6px;
+      transform:rotate(-2deg);
+    }
+
+    /* small screen tweak */
+    @media (max-width:420px){
+      .poster-wrap{width:92vw}
+    }
+  </style>
+</head>
+<body>
+
+  <div class="poster-wrap">
+    <div class="chip">APARTMENT / FLAT</div>
+    <h1>SAMPLE PROPERTY</h1>
+    <div class="sub">Sample Society</div>
+    <div class="location">Bellandur, Bengaluru, Karnataka</div>
+
+    <div class="image-box">
+      <img src="https://via.placeholder.com/120?text=Apple+1" alt="photo1">
+      <img src="https://via.placeholder.com/120?text=Apple+2" alt="photo2">
+      <img src="https://via.placeholder.com/120?text=Apple+3" alt="photo3">
+      <img src="https://via.placeholder.com/120?text=Apple+4" alt="photo4">
+    </div>
+
+    <div class="tags">
+      <div class="tag">2 BHK</div>
+      <div class="tag">3000 Sq Ft</div>
+      <div class="tag">Semi-Furnished</div>
+      <div class="tag">Brand New</div>
+    </div>
+
+    <div class="price">₹ 22,00,00,00</div>
+
+    <div class="contact">Call: <strong>9902978675</strong>
+      <span class="muted">Mail: tanish25gowda@gmail.com</span>
+    </div>
+
+    <div class="footer-brand">WWW.HOMEHNI.COM</div>
+  </div>
+
+</body>
+</html>

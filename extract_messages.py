@@ -8,6 +8,7 @@ for a specific date.
 import json
 import os
 import base64
+import time
 from pathlib import Path
 from datetime import datetime, date
 import re
@@ -857,6 +858,171 @@ def identify_property_related_images(media_files: List[Dict]) -> Optional[List[D
     return property_images
 
 
+def generate_html_webpage(message: Dict, template_path: str, output_path: str) -> Optional[str]:
+    """
+    Generate an HTML webpage for a property message using OpenAI.
+    
+    Args:
+        message: Property message dictionary with index, sender, time, text, reason
+        template_path: Path to the sample.html template file
+        output_path: Path where the generated HTML should be saved
+        
+    Returns:
+        Generated HTML content as string, or None if generation fails
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print(f"⚠️  HTML generation skipped for message #{message.get('index')}: OPENAI_API_KEY not set.")
+        return None
+    
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print(f"⚠️  HTML generation skipped for message #{message.get('index')}: openai package not installed.")
+        return None
+    
+    client = OpenAI(api_key=api_key)
+    
+    # Read the template
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template_html = f.read()
+    except Exception as e:
+        print(f"❌ Error reading template: {e}")
+        return None
+    
+    system_prompt = (
+        "You are an expert web developer specializing in creating property listing webpages. "
+        "Your task is to update the provided HTML template with property information from a WhatsApp message.\n\n"
+        
+        "INSTRUCTIONS:\n"
+        "1. Use the provided HTML template as the base structure - preserve all CSS styles, layout, and structure\n"
+        "2. Extract property information from the WhatsApp message and populate the template accordingly\n"
+        "3. Replace placeholder content with actual property details from the message\n"
+        "4. Use 'apple.avif' as the image source for all 4 property images (use the same image 4 times)\n"
+        "5. Extract and populate:\n"
+        "   - Property type (chip/tag at top right)\n"
+        "   - Property title (h1)\n"
+        "   - Society/Project name (sub)\n"
+        "   - Location (location div)\n"
+        "   - Property tags (2 BHK, Sq Ft, Furnishing status, etc.)\n"
+        "   - Price (price div)\n"
+        "   - Contact information (phone, email if available)\n"
+        "6. Keep the footer brand 'WWW.HOMEHNI.COM' unchanged\n"
+        "7. Preserve all CSS styling and structure exactly as in the template\n"
+        "8. Return ONLY the complete, valid HTML code - no explanations, no markdown, just HTML\n\n"
+        
+        "IMPORTANT:\n"
+        "- If information is not available in the message, use reasonable defaults or leave placeholders\n"
+        "- Ensure all extracted data accurately represents the message content\n"
+        "- Keep the visual design and styling identical to the template\n"
+        "- Use relative paths for images (apple.avif)\n"
+    )
+    
+    user_prompt = (
+        f"Update the following HTML template with property information from this WhatsApp message:\n\n"
+        f"MESSAGE TEXT:\n{message.get('text', '')}\n\n"
+        f"HTML TEMPLATE:\n{template_html}\n\n"
+        f"Generate the updated HTML webpage that accurately represents this property listing. "
+        f"Use 'apple.avif' for all 4 property images. Return ONLY the complete HTML code."
+    )
+    
+    try:
+        # Try GPT-5 first, fallback to GPT-4o if not available
+        try:
+            response = client.chat.completions.create(
+                model="gpt-5",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3  # Lower temperature for more consistent output
+            )
+        except Exception as gpt5_error:
+            if "model" in str(gpt5_error).lower() or "not found" in str(gpt5_error).lower():
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.3
+                )
+            else:
+                raise
+        
+        html_content = response.choices[0].message.content.strip()
+        
+        # Clean up the HTML if it's wrapped in markdown code blocks
+        if html_content.startswith("```html"):
+            html_content = html_content[7:]
+        elif html_content.startswith("```"):
+            html_content = html_content[3:]
+        if html_content.endswith("```"):
+            html_content = html_content[:-3]
+        html_content = html_content.strip()
+        
+        # Save to file
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            return html_content
+        except Exception as e:
+            print(f"❌ Error saving HTML to {output_path}: {e}")
+            return None
+            
+    except Exception as exc:
+        print(f"❌ HTML generation failed for message #{message.get('index')}: {exc}")
+        return None
+
+
+def generate_webpages_for_properties(property_messages: Optional[List[Dict]], template_path: str = "sample.html"):
+    """
+    Generate HTML webpages for each identified property message.
+    
+    Args:
+        property_messages: List of property message dictionaries
+        template_path: Path to the sample.html template file
+    """
+    if not property_messages:
+        print("\n⚠️  No property messages to generate webpages for.")
+        return []
+    
+    print(f"\n{'='*80}")
+    print(f"GENERATING HTML WEBPAGES FOR {len(property_messages)} PROPERTY LISTING(S)")
+    print(f"{'='*80}\n")
+    
+    generated_files = []
+    file_labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+    
+    for idx, message in enumerate(property_messages):
+        if idx >= len(file_labels):
+            print(f"⚠️  Maximum file limit reached. Skipping remaining messages.")
+            break
+        
+        file_label = file_labels[idx]
+        output_path = f"{file_label}.html"
+        
+        print(f"Generating webpage for message #{message.get('index')} → {output_path}...")
+        
+        html_content = generate_html_webpage(message, template_path, output_path)
+        
+        if html_content:
+            print(f"✅ Successfully generated {output_path}")
+            generated_files.append(output_path)
+        else:
+            print(f"❌ Failed to generate {output_path}")
+        
+        # Small delay between requests to avoid rate limiting
+        time.sleep(1)
+    
+    print(f"\n{'='*80}")
+    print(f"GENERATED {len(generated_files)} WEBPAGE(S): {', '.join(generated_files)}")
+    print(f"{'='*80}\n")
+    
+    return generated_files
+
+
 def display_property_analysis(property_messages: Optional[List[Dict]], property_images: Optional[List[Dict]] = None):
     """Pretty-print the OpenAI property message and image analysis."""
     print("\n" + "#" * 80)
@@ -973,11 +1139,23 @@ def main():
         # Display combined analysis
         display_property_analysis(property_messages, property_images)
         
+        # Generate HTML webpages for each property message
+        if property_messages:
+            template_path = Path("sample.html")
+            if template_path.exists():
+                generated_files = generate_webpages_for_properties(property_messages, str(template_path))
+            else:
+                print(f"\n⚠️  Template file 'sample.html' not found. Skipping webpage generation.")
+                generated_files = []
+        else:
+            generated_files = []
+        
         return {
             "messages": messages,
             "media_files": media_files,
             "property_messages": property_messages,
             "property_images": property_images,
+            "generated_webpages": generated_files,
             "date": target_date,
         }
         
