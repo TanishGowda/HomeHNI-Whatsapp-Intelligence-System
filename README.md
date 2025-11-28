@@ -55,7 +55,15 @@ Before using this module, ensure you have:
    - Set the environment variable `OPENAI_API_KEY`
    - Install the Python SDK: `pip install openai`
 
-4. **Basic Terminal/Command Line Knowledge**
+4. **Twilio WhatsApp API (optional, for sending webpages)**
+   - Create a Twilio account at [twilio.com](https://www.twilio.com/)
+   - Get your Account SID and Auth Token from the Twilio Console
+   - Set up a WhatsApp Business number (or use Twilio's sandbox for testing)
+   - Set environment variables: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`
+   - Install the Twilio SDK: `pip install twilio`
+   - **Note**: For sending HTML files, you may need to host them at a publicly accessible URL and set `TWILIO_MEDIA_BASE_URL`
+
+5. **Basic Terminal/Command Line Knowledge**
 
 ## 🔧 Installation
 
@@ -138,7 +146,9 @@ The script will:
 3. Load `chat.txt` inside that folder and parse messages
 4. Scan media files (images, videos, docs) in the same folder
 5. Display all messages and media for the date
-6. (Optional) Send the messages to OpenAI and list property-related items
+6. (Optional) Send the messages to OpenAI and identify property-related items
+7. Generate HTML webpages for each identified property listing
+8. (Optional) Send the generated webpages via WhatsApp to contact numbers in the messages
 
 ### Interactive Example
 
@@ -567,15 +577,60 @@ py extract_messages.py
 python3 extract_messages.py
 ```
 
+## 📤 WhatsApp Integration
+
+### Sending Webpages via WhatsApp
+
+The system can automatically send generated HTML webpages to contact numbers found in property messages using Twilio WhatsApp API.
+
+#### Setup
+
+1. **Install Twilio SDK**:
+   ```bash
+   pip install twilio
+   ```
+
+2. **Get Twilio Credentials**:
+   - Sign up at [twilio.com](https://www.twilio.com/)
+   - Get your Account SID and Auth Token from the Twilio Console
+   - Set up a WhatsApp Business number (or use Twilio's sandbox for testing)
+
+3. **Set Environment Variables**:
+   ```bash
+   # Windows PowerShell
+   $Env:TWILIO_ACCOUNT_SID = "your_account_sid"
+   $Env:TWILIO_AUTH_TOKEN = "your_auth_token"
+   $Env:TWILIO_WHATSAPP_FROM = "whatsapp:+1234567890"  # Your WhatsApp Business number
+   
+   # Optional: If hosting HTML files, set media base URL
+   $Env:TWILIO_MEDIA_BASE_URL = "https://your-domain.com/files"
+   ```
+
+4. **Run the Script**:
+   - The script will automatically send generated webpages to contact numbers found in property messages
+   - Each HTML file (a.html, b.html, etc.) will be sent to the contact number(s) in the corresponding property message
+
+#### How It Works
+
+1. After generating HTML webpages, the system extracts contact numbers from each property message
+2. For each generated webpage, it matches it to the corresponding property message
+3. Extracts phone numbers from the message text
+4. Sends the HTML file via WhatsApp to each contact number found
+5. Provides a summary of successful and failed sends
+
+#### Notes
+
+- **File Hosting**: Twilio WhatsApp API requires files to be at a publicly accessible URL. If you set `TWILIO_MEDIA_BASE_URL`, the system will use that. Otherwise, it sends a text message with file information.
+- **Rate Limiting**: The system includes delays between sends to avoid rate limits
+- **Error Handling**: Failed sends are logged with reasons, and processing continues for other messages
+
 ## 🔮 Future Enhancements
 
-This module is part of a larger system. Future steps will include:
+This module is part of a larger system. Future steps may include:
 
-1. **OpenAI Integration**: Send extracted messages to OpenAI API for analysis
-2. **Message Classification**: Identify important messages automatically
-3. **HTML Generation**: Create webpages from processed messages
-4. **Hostinger Upload**: Deploy generated pages via FTP or GitHub
-5. **URL Generation**: Create unique URLs for customers
+1. **Hostinger Upload**: Deploy generated pages via FTP or GitHub
+2. **URL Generation**: Create unique URLs for customers
+3. **Automated File Hosting**: Automatically upload HTML files to a hosting service for WhatsApp sharing
 
 ## 📝 Notes
 

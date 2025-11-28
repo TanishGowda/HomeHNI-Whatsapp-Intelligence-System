@@ -1,0 +1,93 @@
+PDF Delivery Strategy for HomeHNI Webpages
+==========================================
+
+Objective
+---------
+Share each generated property webpage as a PDF via WhatsApp so recipients can view a polished brochure-style preview, and follow up with a branded call-to-action message.
+
+Flow Overview
+-------------
+1. Generate HTML webpages (`a.html`, `b.html`, …) from property listings (already implemented).
+2. Convert each HTML file to a PDF twin (e.g., `a.pdf`) using an HTML-to-PDF renderer such as:
+   - `weasyprint a.html a.pdf`
+   - or `pdfkit`/`wkhtmltopdf`
+3. Upload each PDF to Hostinger via FTP (automated).
+4. Send the PDF file to the contact number(s) extracted from the corresponding listing using the Twilio WhatsApp API (using the Hostinger-hosted URL).
+5. After sending the PDF, send a second WhatsApp text message:
+   ```
+   Hello from HomeHNI, this is how your property posting will look on our platform, click on this link, to get started with your journey of posting properties through HomeHNI!!! <link>
+   ```
+   (Replace `<link>` once provided.)
+
+Hostinger Setup (One-Time Configuration)
+-----------------------------------------
+1. **Get FTP Credentials from Hostinger**:
+   - Log into Hostinger hPanel
+   - Navigate to: **Files** → **FTP Accounts**
+   - Note down or create an FTP account with:
+     - **FTP Host**: Usually `ftp.yourdomain.com` or IP address
+     - **FTP Username**: Your FTP username
+     - **FTP Password**: Your FTP password
+     - **FTP Port**: Usually `21` (or `22` for SFTP)
+
+2. **Create PDF Storage Directory**:
+   - Using Hostinger File Manager or FTP client:
+     - Navigate to your website's public directory (usually `public_html`)
+     - Create a folder named `property-pdfs` (or any name you prefer)
+     - Ensure this folder is publicly accessible (permissions: 755)
+
+3. **Set Environment Variables**:
+   - `HOSTINGER_FTP_HOST`: Your FTP host (e.g., `ftp.yourdomain.com`)
+   - `HOSTINGER_FTP_USER`: Your FTP username
+   - `HOSTINGER_FTP_PASSWORD`: Your FTP password
+   - `HOSTINGER_FTP_PORT`: FTP port (default: `21`)
+   - `HOSTINGER_FTP_DIR`: Remote directory path (e.g., `/public_html/property-pdfs`)
+   - `HOSTINGER_BASE_URL`: Your website URL (e.g., `https://yourdomain.com/property-pdfs`)
+   - `TWILIO_MEDIA_BASE_URL`: Same as `HOSTINGER_BASE_URL` (for Twilio to access PDFs)
+
+Implementation Notes
+--------------------
+- **Conversion Step**: Add a helper function that takes each `*.html`, invokes the chosen renderer, and stores the PDF locally first.
+- **FTP Upload Step**: 
+  - Use Python's `ftplib` (built-in) or `paramiko` (for SFTP) to upload PDFs to Hostinger
+  - Upload each PDF to the configured `HOSTINGER_FTP_DIR` directory
+  - After successful upload, construct the public URL: `{HOSTINGER_BASE_URL}/{filename}.pdf`
+- **File Sending**: 
+  - Twilio requires publicly accessible URLs for media attachments
+  - Use the Hostinger-hosted PDF URL (from step above) in Twilio's `media_url` parameter
+  - The code will automatically construct URLs like: `https://yourdomain.com/property-pdfs/a.pdf`
+- **WhatsApp Messaging**:
+  - First message: PDF attachment with a short note ("Here is your property listing preview").
+  - Second message: the CTA text above (contains the marketing link, provided later).
+  - Respect Twilio rate limits (current delay logic already helps).
+- **Error Handling**: 
+  - If PDF generation fails, log it and skip WhatsApp send for that listing.
+  - If FTP upload fails, log the error and retry once before skipping.
+  - If Twilio send fails, log the error but continue with other messages.
+- **Dependencies**: 
+  - Document/install the selected HTML→PDF tool (e.g., add `weasyprint` to `requirements.txt`)
+  - Python's `ftplib` is built-in (no extra install needed)
+  - Optional: `paramiko` if using SFTP instead of FTP
+
+Benefits of Using Hostinger
+----------------------------
+✅ Uses your existing Hostinger hosting account (no additional services needed)
+✅ Same domain as your webpages (consistent branding)
+✅ Fully automated via FTP (no manual uploads required)
+✅ Cost-effective (included in your hosting plan)
+✅ Reliable and fast (your existing infrastructure)
+
+Next Steps (once approved)
+---------------------------
+1. Pick and integrate the HTML-to-PDF renderer (recommend `weasyprint` for simplicity).
+2. Implement FTP upload function using `ftplib` to upload PDFs to Hostinger.
+3. Extend the generation pipeline to:
+   - Generate PDFs alongside HTML files
+   - Upload PDFs to Hostinger automatically
+   - Get public URLs for each PDF
+4. Update the WhatsApp sender to:
+   - Use Hostinger-hosted PDF URLs
+   - Send PDF as first message
+   - Send CTA text as second message
+5. Insert the real HomeHNI onboarding link into the CTA text.
+6. Test the complete flow end-to-end.

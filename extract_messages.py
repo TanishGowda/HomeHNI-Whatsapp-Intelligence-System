@@ -13,6 +13,15 @@ from pathlib import Path
 from datetime import datetime, date
 import re
 from typing import List, Dict, Optional
+import ftplib
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)  # override=True ensures .env file values take precedence over existing env vars
+except ImportError:
+    # python-dotenv not installed, continue without it
+    pass
 
 
 def parse_whatsapp_date(date_str: str) -> Optional[date]:
@@ -1016,48 +1025,775 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
         return None
 
 
+def convert_html_to_pdf(html_file_path: str, pdf_file_path: str) -> bool:
+    """
+    Convert an HTML file to PDF using playwright (headless browser).
+    Optimized to fit content in 2 pages with proper alignment.
+    Works on Windows, macOS, and Linux.
+    
+    Args:
+        html_file_path: Path to the HTML file
+        pdf_file_path: Path where the PDF should be saved
+        
+    Returns:
+        True if conversion successful, False otherwise
+    """
+    # Try playwright first (best for Windows)
+    try:
+        from playwright.sync_api import sync_playwright
+        use_playwright = True
+    except ImportError:
+        use_playwright = False
+        # Fallback to weasyprint if available (for Linux/macOS)
+        try:
+            from weasyprint import HTML
+            use_weasyprint = True
+        except ImportError:
+            use_weasyprint = False
+    
+    if not use_playwright and not use_weasyprint:
+        print("⚠️  No PDF library found. Install one of the following:")
+        print("   - playwright (recommended for Windows): pip install playwright && playwright install chromium")
+        print("   - weasyprint (Linux/macOS): pip install weasyprint")
+        return False
+    
+    try:
+        html_path = Path(html_file_path)
+        if not html_path.exists():
+            print(f"❌ HTML file not found: {html_file_path}")
+            return False
+        
+        # Use absolute path for file:// URL
+        abs_html_path = html_path.resolve()
+        file_url = f"file:///{abs_html_path.as_posix()}"
+        
+        if use_playwright:
+            # Use Playwright with headless Chrome (works on Windows)
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page()
+                page.goto(file_url, wait_until="networkidle")
+                
+                # Inject CSS to optimize for 2-page PDF layout
+                page.add_style_tag(content="""
+                    @media print {
+                        body {
+                            font-size: 12px !important;
+                            line-height: 1.4 !important;
+                        }
+                        .hero-section {
+                            padding: 30px 20px !important;
+                            min-height: 200px !important;
+                        }
+                        .property-title {
+                            font-size: 32px !important;
+                            margin-bottom: 10px !important;
+                        }
+                        .property-subtitle {
+                            font-size: 18px !important;
+                            margin-bottom: 10px !important;
+                        }
+                        .property-location {
+                            font-size: 16px !important;
+                        }
+                        .image-gallery {
+                            grid-template-columns: repeat(2, 1fr) !important;
+                            gap: 10px !important;
+                            margin-bottom: 20px !important;
+                        }
+                        .gallery-item {
+                            aspect-ratio: 4/3 !important;
+                        }
+                        .details-grid {
+                            gap: 20px !important;
+                            margin-bottom: 20px !important;
+                        }
+                        .features-section, .price-card, .contact-card {
+                            padding: 20px !important;
+                        }
+                        .section-title {
+                            font-size: 20px !important;
+                            margin-bottom: 15px !important;
+                        }
+                        .tag {
+                            padding: 8px 16px !important;
+                            font-size: 12px !important;
+                        }
+                        .description {
+                            font-size: 14px !important;
+                            line-height: 1.5 !important;
+                            margin-top: 15px !important;
+                        }
+                        .price-value {
+                            font-size: 36px !important;
+                        }
+                        .contact-title {
+                            font-size: 18px !important;
+                            margin-bottom: 15px !important;
+                        }
+                        .contact-item {
+                            padding: 10px !important;
+                        }
+                        .contact-item strong, .contact-item span {
+                            font-size: 14px !important;
+                        }
+                        .footer {
+                            padding: 20px !important;
+                            margin-top: 20px !important;
+                        }
+                        .footer-brand {
+                            font-size: 24px !important;
+                        }
+                        .container {
+                            padding: 20px !important;
+                        }
+                    }
+                """)
+                
+                # Generate PDF optimized for 2 pages
+                page.pdf(
+                    path=pdf_file_path,
+                    format="A4",
+                    print_background=True,
+                    margin={"top": "0.8cm", "right": "0.8cm", "bottom": "0.8cm", "left": "0.8cm"},
+                    prefer_css_page_size=False,
+                    scale=0.95  # Slightly scale down to ensure content fits
+                )
+                browser.close()
+        else:
+            # Fallback to weasyprint (for Linux/macOS)
+            HTML(filename=str(html_path)).write_pdf(pdf_file_path)
+        
+        return True
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "executable doesn't exist" in error_msg.lower() or "chromium" in error_msg.lower():
+            print(f"❌ Playwright browser not installed. Run: playwright install chromium")
+        else:
+            print(f"❌ PDF conversion failed for {html_file_path}: {e}")
+        return False
+
+
+def upload_file_to_hostinger(file_path: str, subdirectory: str = None) -> Optional[str]:
+    """
+    Upload a file to Hostinger via FTP and return the public URL.
+    
+    Args:
+        file_path: Path to the local file to upload
+        subdirectory: Optional subdirectory (e.g., "propertypages" for HTML, "propertypdfs" for PDF)
+        
+    Returns:
+        Public URL of the uploaded file, or None if upload fails
+    """
+    # Get FTP credentials from environment variables
+    ftp_host = os.getenv("HOSTINGER_FTP_HOST")
+    ftp_user = os.getenv("HOSTINGER_FTP_USER")
+    ftp_password = os.getenv("HOSTINGER_FTP_PASSWORD")
+    ftp_port = int(os.getenv("HOSTINGER_FTP_PORT", "21"))
+    
+    # Determine directory - prioritize HOSTINGER_FTP_DIR from .env file
+    local_path = Path(file_path)
+    
+    # Get base URL from .env file
+    base_url = os.getenv("HOSTINGER_BASE_URL", "").rstrip('/')
+    
+    # Check if HOSTINGER_FTP_DIR is set in .env (user's preference)
+    env_ftp_dir = os.getenv("HOSTINGER_FTP_DIR")
+    
+    if env_ftp_dir:
+        # Use the directory from .env file (respects user's configuration)
+        ftp_dir = env_ftp_dir
+        # Use HOSTINGER_BASE_URL directly if set, otherwise construct from FTP host
+        if base_url:
+            public_url_base = base_url
+        else:
+            # Extract domain from FTP host and construct URL
+            domain = (ftp_host or '').replace('ftp.', '')
+            public_url_base = f"https://{domain}{env_ftp_dir}" if domain else None
+    elif subdirectory:
+        # Fallback: construct path if HOSTINGER_FTP_DIR not set
+        ftp_dir = f"/public_html/{subdirectory}"
+        if base_url:
+            public_url_base = f"{base_url}/{subdirectory}"
+        else:
+            public_url_base = f"https://{os.getenv('HOSTINGER_FTP_HOST', '').replace('ftp.', '')}/{subdirectory}"
+    else:
+        # Default fallback
+        ftp_dir = "/public_html/propertypages"
+        if base_url:
+            public_url_base = base_url
+        else:
+            public_url_base = f"https://{os.getenv('HOSTINGER_FTP_HOST', '').replace('ftp.', '')}"
+    
+    if not all([ftp_host, ftp_user, ftp_password]):
+        print(f"⚠️  Hostinger FTP credentials not configured. Skipping upload for {file_path}")
+        print("   Required environment variables:")
+        print("   - HOSTINGER_FTP_HOST")
+        print("   - HOSTINGER_FTP_USER")
+        print("   - HOSTINGER_FTP_PASSWORD")
+        print("   - HOSTINGER_FTP_PORT (optional, default: 21)")
+        print("   - HOSTINGER_FTP_DIR (for HTML and PDF, optional, default: /public_html/propertypages)")
+        print("   - HOSTINGER_BASE_URL")
+        return None
+    
+    if not local_path.exists():
+        print(f"❌ File not found: {file_path}")
+        return None
+    
+    try:
+        # Connect to FTP server
+        ftp = ftplib.FTP()
+        ftp.connect(ftp_host, ftp_port)
+        ftp.login(ftp_user, ftp_password)
+        
+        # Change to the target directory
+        try:
+            ftp.cwd(ftp_dir)
+        except ftplib.error_perm:
+            # Directory might not exist, try to create it
+            print(f"⚠️  Directory {ftp_dir} not found. Attempting to create...")
+            # Try to create directory (this may fail if permissions don't allow)
+            try:
+                parts = ftp_dir.strip('/').split('/')
+                current_path = ''
+                for part in parts:
+                    current_path += '/' + part
+                    try:
+                        ftp.cwd(current_path)
+                    except ftplib.error_perm:
+                        ftp.mkd(current_path)
+                        ftp.cwd(current_path)
+            except Exception as e:
+                print(f"❌ Could not create directory {ftp_dir}: {e}")
+                ftp.quit()
+                return None
+        
+        # Upload the file
+        filename = local_path.name
+        with open(local_path, 'rb') as fobj:
+            ftp.storbinary(f'STOR {filename}', fobj)
+        
+        ftp.quit()
+        
+        # Construct the public URL
+        public_url = f"{public_url_base.rstrip('/')}/{filename}"
+        print(f"✅ Successfully uploaded {filename} to Hostinger")
+        return public_url
+        
+    except ftplib.error_perm as e:
+        print(f"❌ FTP permission error: {e}")
+        return None
+    except ftplib.error_temp as e:
+        print(f"❌ FTP temporary error: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ FTP upload failed for {file_path}: {e}")
+        return None
+
+
+def upload_pdf_to_hostinger(pdf_file_path: str) -> Optional[str]:
+    """
+    Backwards-compatible wrapper to upload a PDF using the generic uploader.
+    """
+    return upload_file_to_hostinger(pdf_file_path)
+
+
+def extract_contact_numbers(message_text: str) -> List[str]:
+    """
+    Extract contact phone numbers from a message text.
+    
+    Supports various formats:
+    - 10-digit numbers
+    - Numbers with country codes
+    - Numbers written as "Call: X", "Contact: X", "Phone: X", etc.
+    - Numbers in "Reach out on X", "Pls share details on X" format
+    
+    Args:
+        message_text: The message text to extract phone numbers from
+        
+    Returns:
+        List of valid phone numbers (normalized to include country code if needed)
+    """
+    phone_numbers = []
+    
+    # Pattern to match various phone number formats
+    # Matches: 10-digit numbers, numbers with spaces/dashes, country codes
+    patterns = [
+        # 10-digit Indian numbers (most common)
+        r'\b(\d{10})\b',
+        # Numbers with country code +91
+        r'\+91[\s-]?(\d{10})',
+        # Numbers written as "Call: X", "Contact: X", "Phone: X"
+        r'(?:Call|Contact|Phone|Reach out|share details|details on)[\s:]+(\d{10,12})',
+        # Numbers with spaces or dashes: 123 456 7890 or 123-456-7890
+        r'\b(\d{3}[\s-]?\d{3}[\s-]?\d{4})\b',
+        # Numbers in parentheses or brackets
+        r'[\(\[{](\d{10,12})[\)\]}]',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, message_text, re.IGNORECASE)
+        for match in matches:
+            # Clean the number (remove spaces, dashes)
+            cleaned = re.sub(r'[\s\-]', '', str(match))
+            # Validate it's a reasonable length (10-12 digits)
+            if len(cleaned) >= 10 and len(cleaned) <= 12:
+                # Normalize to include country code if it's a 10-digit number
+                if len(cleaned) == 10:
+                    # Assume Indian number, add +91
+                    normalized = f"+91{cleaned}"
+                elif cleaned.startswith('91') and len(cleaned) == 12:
+                    normalized = f"+{cleaned}"
+                elif cleaned.startswith('+91'):
+                    normalized = cleaned
+                else:
+                    normalized = cleaned
+                
+                # Avoid duplicates
+                if normalized not in phone_numbers:
+                    phone_numbers.append(normalized)
+    
+    return phone_numbers
+
+
+def send_whatsapp_pdf(phone_number: str, pdf_url: str, message_text: str = "") -> bool:
+    """
+    Send a PDF file via WhatsApp using Twilio API.
+    
+    Args:
+        phone_number: Recipient phone number (with country code, e.g., +919876543210)
+        pdf_url: Public URL of the PDF file to send
+        message_text: Optional text message to send along with the PDF
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    # Get Twilio credentials from environment variables
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
+    
+    if not account_sid or not auth_token or not from_number:
+        print(f"⚠️  Twilio credentials not configured. Skipping WhatsApp send to {phone_number}")
+        return False
+    
+    try:
+        from twilio.rest import Client
+    except ImportError:
+        print(f"⚠️  Twilio package not installed. Run 'pip install twilio'. Skipping WhatsApp send.")
+        return False
+    
+    try:
+        client = Client(account_sid, auth_token)
+        
+        # Format phone number for WhatsApp (ensure it starts with whatsapp:)
+        if not phone_number.startswith("whatsapp:"):
+            whatsapp_number = f"whatsapp:{phone_number}"
+        else:
+            whatsapp_number = phone_number
+        
+        if not from_number.startswith("whatsapp:"):
+            from_whatsapp = f"whatsapp:{from_number}"
+        else:
+            from_whatsapp = from_number
+        
+        # Prepare message text
+        if not message_text:
+            message_text = "Hello! Here is your property listing preview."
+        
+        # Send message with PDF attachment
+        message = client.messages.create(
+            body=message_text,
+            from_=from_whatsapp,
+            to=whatsapp_number,
+            media_url=[pdf_url]
+        )
+        
+        return True
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        if "21211" in error_msg or "invalid" in error_msg.lower():
+            print(f"❌ Invalid phone number: {phone_number}")
+        elif "21608" in error_msg or "rate limit" in error_msg.lower():
+            print(f"⚠️  Rate limit exceeded. Please try again later.")
+        elif "21614" in error_msg:
+            print(f"❌ Unsubscribed number: {phone_number}")
+        elif "media" in error_msg.lower() or "url" in error_msg.lower():
+            print(f"⚠️  Media URL issue. Ensure PDF URL is accessible: {pdf_url}")
+        else:
+            print(f"❌ WhatsApp send failed to {phone_number}: {exc}")
+        return False
+
+
+def send_whatsapp_cta_message(phone_number: str, onboarding_link: str = "") -> bool:
+    """
+    Send the call-to-action message via WhatsApp.
+    
+    Args:
+        phone_number: Recipient phone number (with country code, e.g., +919876543210)
+        onboarding_link: HomeHNI onboarding link (if empty, uses placeholder)
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    # Get Twilio credentials from environment variables
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
+    
+    if not account_sid or not auth_token or not from_number:
+        print(f"⚠️  Twilio credentials not configured. Skipping CTA message to {phone_number}")
+        return False
+    
+    try:
+        from twilio.rest import Client
+    except ImportError:
+        print(f"⚠️  Twilio package not installed. Run 'pip install twilio'. Skipping WhatsApp send.")
+        return False
+    
+    # Use placeholder if link not provided
+    if not onboarding_link:
+        onboarding_link = "<link>"  # Placeholder - user will provide later
+    
+    cta_message = (
+        "Hello from HomeHNI, this is how your property posting will look on our platform, "
+        f"click on this link, to get started with your journey of posting properties through HomeHNI!!! {onboarding_link}"
+    )
+    
+    try:
+        client = Client(account_sid, auth_token)
+        
+        # Format phone number for WhatsApp
+        if not phone_number.startswith("whatsapp:"):
+            whatsapp_number = f"whatsapp:{phone_number}"
+        else:
+            whatsapp_number = phone_number
+        
+        if not from_number.startswith("whatsapp:"):
+            from_whatsapp = f"whatsapp:{from_number}"
+        else:
+            from_whatsapp = from_number
+        
+        # Send CTA message
+        message = client.messages.create(
+            body=cta_message,
+            from_=from_whatsapp,
+            to=whatsapp_number
+        )
+        
+        return True
+        
+    except Exception as exc:
+        error_msg = str(exc)
+        if "21211" in error_msg or "invalid" in error_msg.lower():
+            print(f"❌ Invalid phone number: {phone_number}")
+        elif "21608" in error_msg or "rate limit" in error_msg.lower():
+            print(f"⚠️  Rate limit exceeded. Please try again later.")
+        elif "21614" in error_msg:
+            print(f"❌ Unsubscribed number: {phone_number}")
+        else:
+            print(f"❌ CTA message send failed to {phone_number}: {exc}")
+        return False
+
+
+def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generated_files: List[Dict], onboarding_link: str = ""):
+    """
+    Send generated HTML and PDF links via WhatsApp to contact numbers in property messages.
+    Sends 3 messages in sequence:
+    1. HTML preview link
+    2. PDF link
+    3. CTA message with onboarding link
+    
+    Args:
+        property_messages: List of property message dictionaries
+        generated_files: List of dictionaries with 'html_file', 'html_url', 'pdf_file', and 'pdf_url' keys
+        onboarding_link: HomeHNI onboarding link (optional, uses placeholder if not provided)
+    """
+    if not property_messages or not generated_files:
+        print("\n⚠️  No property messages or generated files to send via WhatsApp.")
+        return
+    
+    print(f"\n{'='*80}")
+    print(f"SENDING PROPERTY PREVIEW LINKS VIA WHATSAPP (3 MESSAGES PER PROPERTY)")
+    print(f"{'='*80}\n")
+    
+    # Check Twilio configuration
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
+    
+    if not account_sid or not auth_token or not from_number:
+        print("⚠️  Twilio WhatsApp not configured. Skipping WhatsApp sending.")
+        print("   To enable WhatsApp sending, set the following environment variables:")
+        print("   - TWILIO_ACCOUNT_SID")
+        print("   - TWILIO_AUTH_TOKEN")
+        print("   - TWILIO_WHATSAPP_FROM (your WhatsApp Business number)")
+        return
+    
+    successful_html_sends = 0
+    failed_html_sends = 0
+    successful_pdf_sends = 0
+    failed_pdf_sends = 0
+    successful_cta_sends = 0
+    failed_cta_sends = 0
+    
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+    except ImportError:
+        print("⚠️  Twilio package not installed. Run 'pip install twilio'. Skipping WhatsApp send.")
+        return
+    
+    for idx, message in enumerate(property_messages):
+        if idx >= len(generated_files):
+            break
+        
+        file_info = generated_files[idx]
+        html_url = file_info.get('html_url')
+        pdf_url = file_info.get('pdf_url')
+        html_file = file_info.get('html_file', 'Unknown')
+        message_text = message.get('text', '')
+        
+        # Extract contact numbers from the message
+        contact_numbers = extract_contact_numbers(message_text)
+        
+        if not contact_numbers:
+            print(f"⚠️  No contact number found in message #{message.get('index')}. Skipping {html_file}")
+            failed_html_sends += 1
+            failed_pdf_sends += 1
+            failed_cta_sends += 1
+            continue
+        
+        if not html_url:
+            print(f"⚠️  No HTML URL available for {html_file}. Skipping WhatsApp send.")
+            failed_html_sends += 1
+            failed_pdf_sends += 1
+            failed_cta_sends += 1
+            continue
+        
+        # Send to each contact number found in the message
+        for phone_number in contact_numbers:
+            print(f"\nSending to {phone_number}...")
+            
+            # Format phone numbers for WhatsApp
+            if not phone_number.startswith("whatsapp:"):
+                whatsapp_number = f"whatsapp:{phone_number}"
+            else:
+                whatsapp_number = phone_number
+
+            if not from_number.startswith("whatsapp:"):
+                from_whatsapp = f"whatsapp:{from_number}"
+            else:
+                from_whatsapp = from_number
+            
+            # Step 1: Send HTML preview link as first message
+            print(f"  → Sending HTML preview link...")
+            try:
+                html_body = f"Hello! Here is your property listing preview: {html_url}"
+                client.messages.create(
+                    body=html_body,
+                    from_=from_whatsapp,
+                    to=whatsapp_number,
+                )
+                print(f"  ✅ HTML preview link sent successfully")
+                successful_html_sends += 1
+            except Exception as exc:
+                print(f"  ❌ HTML preview link send failed: {exc}")
+                failed_html_sends += 1
+                # Continue to try PDF and CTA even if HTML fails
+                failed_pdf_sends += 1
+                failed_cta_sends += 1
+                continue
+
+            # Delay between messages
+            time.sleep(2)
+
+            # Step 2: Send PDF link as second message
+            if pdf_url:
+                print(f"  → Sending PDF link...")
+                try:
+                    pdf_body = f"Here is the PDF version of your property listing: {pdf_url}"
+                    client.messages.create(
+                        body=pdf_body,
+                        from_=from_whatsapp,
+                        to=whatsapp_number,
+                    )
+                    print(f"  ✅ PDF link sent successfully")
+                    successful_pdf_sends += 1
+                except Exception as exc:
+                    print(f"  ❌ PDF link send failed: {exc}")
+                    failed_pdf_sends += 1
+            else:
+                print(f"  ⚠️  No PDF URL available. Skipping PDF message.")
+                failed_pdf_sends += 1
+
+            # Delay between messages
+            time.sleep(2)
+
+            # Step 3: Send CTA message as third message
+            print(f"  → Sending CTA message...")
+            cta_success = send_whatsapp_cta_message(phone_number, onboarding_link)
+            
+            if cta_success:
+                print(f"  ✅ CTA message sent successfully")
+                successful_cta_sends += 1
+            else:
+                print(f"  ❌ CTA message failed")
+                failed_cta_sends += 1
+            
+            # Delay between different recipients to avoid rate limiting
+            time.sleep(2)
+    
+    print(f"\n{'='*80}")
+    print(f"WHATSAPP SENDING SUMMARY:")
+    print(f"  HTML Preview Messages:")
+    print(f"    Successful: {successful_html_sends}")
+    print(f"    Failed: {failed_html_sends}")
+    print(f"  PDF Messages:")
+    print(f"    Successful: {successful_pdf_sends}")
+    print(f"    Failed: {failed_pdf_sends}")
+    print(f"  CTA Messages:")
+    print(f"    Successful: {successful_cta_sends}")
+    print(f"    Failed: {failed_cta_sends}")
+    print(f"{'='*80}\n")
+
+
+def _build_safe_filename(message: Dict, used_names: set) -> str:
+    """
+    Build a unique, filesystem-safe base filename for a property message.
+    
+    Format (best-effort):
+        <sender>_<time>_<index>
+    
+    Where:
+        - sender: message sender name (spaces -> -, non-alnum removed)
+        - time  : message time (HH-MM-SS or HH-MM) with ':' replaced by '-'
+        - index : original message index in the chat
+    
+    A numeric suffix is appended if the name already exists in used_names.
+    """
+    sender = (message.get("sender") or "property").strip()
+    # Take only first line of sender in case of weird values
+    sender = sender.splitlines()[0]
+    
+    time_str = (message.get("time") or "").strip()
+    time_safe = time_str.replace(":", "-").replace(" ", "_")
+    
+    index = message.get("index")
+    index_part = f"{index}" if index is not None else ""
+    
+    parts = [sender, time_safe, index_part]
+    # Join non-empty parts with underscore
+    base = "_".join([p for p in parts if p])
+    if not base:
+        base = "property"
+    
+    # Lowercase and keep only safe chars
+    base = base.lower()
+    base = re.sub(r"[^a-z0-9_\-]+", "-", base)
+    # Collapse multiple dashes/underscores
+    base = re.sub(r"[-_]+", "-", base).strip("-_")
+    
+    if not base:
+        base = "property"
+    
+    original_base = base
+    counter = 1
+    while base in used_names:
+        base = f"{original_base}-{counter}"
+        counter += 1
+    
+    used_names.add(base)
+    return base
+
+
 def generate_webpages_for_properties(property_messages: Optional[List[Dict]], template_path: str = "sample.html"):
     """
-    Generate HTML webpages for each identified property message.
+    Generate HTML webpages and PDFs for each identified property message.
+    Uploads both HTML and PDF files to Hostinger and returns their public URLs.
     
     Args:
         property_messages: List of property message dictionaries
         template_path: Path to the sample.html template file
+        
+    Returns:
+        List of dictionaries with 'html_file', 'html_url', 'pdf_file', and 'pdf_url' keys
     """
     if not property_messages:
         print("\n⚠️  No property messages to generate webpages for.")
         return []
     
     print(f"\n{'='*80}")
-    print(f"GENERATING HTML WEBPAGES FOR {len(property_messages)} PROPERTY LISTING(S)")
+    print(f"GENERATING HTML WEBPAGES AND PDFs FOR {len(property_messages)} PROPERTY LISTING(S)")
     print(f"{'='*80}\n")
     
     generated_files = []
-    file_labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+    used_names: set = set()
     
     for idx, message in enumerate(property_messages):
-        if idx >= len(file_labels):
-            print(f"⚠️  Maximum file limit reached. Skipping remaining messages.")
-            break
+        # Build a unique, descriptive filename per message
+        base_name = _build_safe_filename(message, used_names)
+        html_path = f"{base_name}.html"
+        pdf_path = f"{base_name}.pdf"
         
-        file_label = file_labels[idx]
-        output_path = f"{file_label}.html"
+        print(f"\nProcessing message #{message.get('index')}...")
         
-        print(f"Generating webpage for message #{message.get('index')} → {output_path}...")
+        # Step 1: Generate HTML webpage
+        print(f"  → Generating HTML: {html_path}")
+        html_content = generate_html_webpage(message, template_path, html_path)
         
-        html_content = generate_html_webpage(message, template_path, output_path)
+        if not html_content:
+            print(f"  ❌ Failed to generate {html_path}. Skipping PDF conversion and upload.")
+            continue
         
-        if html_content:
-            print(f"✅ Successfully generated {output_path}")
-            generated_files.append(output_path)
+        print(f"  ✅ Successfully generated {html_path}")
+        
+        # Step 2: Convert HTML to PDF
+        print(f"  → Converting HTML to PDF: {pdf_path}")
+        pdf_success = convert_html_to_pdf(html_path, pdf_path)
+        
+        if not pdf_success:
+            print(f"  ⚠️  PDF conversion failed. Continuing with HTML upload only.")
+            pdf_path = None
+        
+        # Step 3: Upload HTML to Hostinger
+        print(f"  → Uploading HTML to Hostinger...")
+        html_url = upload_file_to_hostinger(html_path, "propertypages")
+        
+        if html_url:
+            print(f"  ✅ Successfully uploaded HTML. URL: {html_url}")
         else:
-            print(f"❌ Failed to generate {output_path}")
+            print(f"  ⚠️  HTML upload failed. HTML link will not be sent via WhatsApp.")
+        
+        # Step 4: Upload PDF to Hostinger (if conversion was successful)
+        pdf_url = None
+        if pdf_path and Path(pdf_path).exists():
+            print(f"  → Uploading PDF to Hostinger...")
+            pdf_url = upload_file_to_hostinger(pdf_path, "propertypages")
+            
+            if pdf_url:
+                print(f"  ✅ Successfully uploaded PDF. URL: {pdf_url}")
+            else:
+                print(f"  ⚠️  PDF upload failed. PDF link will not be sent via WhatsApp.")
+        
+        generated_files.append({
+            'html_file': html_path,
+            'html_url': html_url,
+            'pdf_file': pdf_path if pdf_path and Path(pdf_path).exists() else None,
+            'pdf_url': pdf_url,
+        })
         
         # Small delay between requests to avoid rate limiting
         time.sleep(1)
     
     print(f"\n{'='*80}")
-    print(f"GENERATED {len(generated_files)} WEBPAGE(S): {', '.join(generated_files)}")
+    print(f"GENERATION SUMMARY:")
+    print(f"  HTML files generated: {len([f for f in generated_files if f['html_file']])}")
+    print(f"  HTML files uploaded: {len([f for f in generated_files if f['html_url']])}")
+    print(f"  PDF files generated: {len([f for f in generated_files if f['pdf_file']])}")
+    print(f"  PDF files uploaded: {len([f for f in generated_files if f['pdf_url']])}")
     print(f"{'='*80}\n")
     
     return generated_files
@@ -1179,11 +1915,17 @@ def main():
         # Display combined analysis
         display_property_analysis(property_messages, property_images)
         
-        # Generate HTML webpages for each property message
+        # Generate HTML webpages and PDFs for each property message
         if property_messages:
             template_path = Path("sample.html")
             if template_path.exists():
                 generated_files = generate_webpages_for_properties(property_messages, str(template_path))
+                
+                # Send PDFs via WhatsApp
+                if generated_files:
+                    # Get onboarding link from environment variable (optional)
+                    onboarding_link = os.getenv("HOMEHNI_ONBOARDING_LINK", "")
+                    send_webpages_via_whatsapp(property_messages, generated_files, onboarding_link)
             else:
                 print(f"\n⚠️  Template file 'sample.html' not found. Skipping webpage generation.")
                 generated_files = []

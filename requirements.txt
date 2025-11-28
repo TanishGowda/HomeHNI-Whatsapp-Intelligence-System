@@ -1,0 +1,12 @@
+# Core dependencies
+openai>=1.0.0
+twilio>=8.0.0
+playwright>=1.40.0
+python-dotenv>=1.0.0
+
+# Optional: weasyprint>=60.0 (for Linux/macOS, not recommended for Windows)
+
+# IMPORTANT: After installing these packages, you must also install the Chromium browser:
+# Run: python -m playwright install chromium
+# OR use the automated setup script: python setup.py
+
