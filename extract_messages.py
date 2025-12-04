@@ -1856,33 +1856,28 @@ def display_property_analysis(property_messages: Optional[List[Dict]], property_
     print("#" * 80 + "\n")
 
 
-def main():
+def run_pipeline(folder_path: Path, date_input: str) -> Optional[Dict]:
     """
-    Main entry point for the CLI.
-    Prompts user for folder name and date, then extracts messages and media.
+    Core pipeline that can be called from both the CLI and the web dashboard.
+    
+    Args:
+        folder_path: Path to the folder that contains `chat.txt` and optional media.
+        date_input: Date string in DD/MM/YYYY or DD/MM/YY format (as entered by the user).
+    
+    Returns:
+        A dictionary with messages, media, property analysis, generated webpages, and date,
+        or None if an unrecoverable error occurred.
     """
-    # Prompt for folder name
-    folder_input = input("Enter folder name (e.g., HomeGroup): ").strip()
-    
-    if not folder_input:
-        print("Error: Folder name cannot be empty.")
-        return
-    
-    folder_path = Path(folder_input)
-    
     if not folder_path.exists() or not folder_path.is_dir():
         print(f"Error: Folder not found: {folder_path.absolute()}")
         print("Please ensure the folder exists in the current directory.")
-        return
-    
-    # Prompt for date
-    date_input = input("Enter date to extract (DD/MM/YYYY or DD/MM/YY): ").strip()
-    
+        return None
+
     # Parse the date
     target_date = parse_whatsapp_date(date_input)
     if target_date is None:
         print(f"Error: Invalid date format. Expected DD/MM/YYYY or DD/MM/YY, got: {date_input}")
-        return
+        return None
     
     # Chat file path
     chat_file = folder_path / "chat.txt"
@@ -1890,7 +1885,7 @@ def main():
     if not chat_file.exists():
         print(f"Error: Chat file not found at {chat_file.absolute()}")
         print("Please ensure chat.txt exists in the specified folder.")
-        return
+        return None
     
     try:
         # Extract messages for the target date
@@ -1921,7 +1916,7 @@ def main():
             if template_path.exists():
                 generated_files = generate_webpages_for_properties(property_messages, str(template_path))
                 
-                # Send PDFs via WhatsApp
+                # Send webpages via WhatsApp (HTML link + PDF + CTA)
                 if generated_files:
                     # Get onboarding link from environment variable (optional)
                     onboarding_link = os.getenv("HOMEHNI_ONBOARDING_LINK", "")
@@ -1939,6 +1934,7 @@ def main():
             "property_images": property_images,
             "generated_webpages": generated_files,
             "date": target_date,
+            "group_name": folder_path.name,
         }
         
     except Exception as e:
@@ -1946,6 +1942,30 @@ def main():
         import traceback
         traceback.print_exc()
         return None
+
+
+def main():
+    """
+    Main entry point for the CLI.
+    Prompts user for folder name and date, then runs the core pipeline.
+    """
+    # Prompt for folder name
+    folder_input = input("Enter folder name (e.g., HomeGroup): ").strip()
+    
+    if not folder_input:
+        print("Error: Folder name cannot be empty.")
+        return
+    
+    folder_path = Path(folder_input)
+    
+    # Prompt for date
+    date_input = input("Enter date to extract (DD/MM/YYYY or DD/MM/YY): ").strip()
+    
+    result = run_pipeline(folder_path, date_input)
+    if result is None:
+        print("\n⚠️  Pipeline failed. See errors above.")
+    else:
+        print("\n✅ Pipeline completed successfully.")
 
 
 if __name__ == "__main__":
