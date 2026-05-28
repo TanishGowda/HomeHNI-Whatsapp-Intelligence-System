@@ -916,7 +916,7 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
         "1. PRESERVE the exact HTML structure, CSS classes, and layout of the template\n"
         "2. KEEP all CSS styles exactly as provided - do NOT modify colors, fonts, spacing, or design elements\n"
         "3. MAINTAIN the red and white color scheme (--primary-red: #C21807, --dark-red: #9F1205, etc.)\n"
-        "4. KEEP the same section structure: Header → Hero → Image Gallery → Details Grid → Footer\n"
+        "4. KEEP the same section structure: Header → Hero → Details Grid → Footer (REMOVE Image Gallery section)\n"
         "5. PRESERVE all CSS variables, animations, and responsive breakpoints\n"
         "6. KEEP the footer brand 'WWW.HOMEHNI.COM' unchanged\n\n"
         
@@ -926,7 +926,7 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
         "   - property-title: Extract property name/title from message\n"
         "   - property-subtitle: Extract society/project/builder name\n"
         "   - property-location: Extract and format location details\n"
-        "3. Image Gallery: Use 'apple.avif' for all 4 images (keep same image 4 times)\n"
+        "3. Image Gallery: REMOVE the entire image gallery section - do not include any images\n"
         "4. Features Section:\n"
         "   - tags-container: Extract property features (BHK, Sq Ft, Furnishing, etc.) and create appropriate tags\n"
         "   - description: If message has additional details, create a brief description paragraph\n"
@@ -951,7 +951,7 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
         "3. DO NOT remove or modify CSS classes\n"
         "4. DO NOT change the responsive breakpoints or media queries\n"
         "5. DO NOT alter the header, footer, or overall layout structure\n"
-        "6. DO NOT use different image sources - always use 'apple.avif'\n\n"
+        "6. DO NOT include any images or image gallery sections\n\n"
         
         "EXTRACTION GUIDELINES:\n"
         "- Extract property type from keywords: 'apartment', 'flat', 'office', 'land', 'commercial', 'residential', etc.\n"
@@ -973,7 +973,7 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
         f"MESSAGE TEXT:\n{message.get('text', '')}\n\n"
         f"HTML TEMPLATE:\n{template_html}\n\n"
         f"Generate the updated HTML webpage that accurately represents this property listing. "
-        f"Use 'apple.avif' for all 4 property images. Return ONLY the complete HTML code."
+        f"DO NOT include any images or image gallery sections. Return ONLY the complete HTML code."
     )
     
     try:
@@ -1028,7 +1028,7 @@ def generate_html_webpage(message: Dict, template_path: str, output_path: str) -
 def convert_html_to_pdf(html_file_path: str, pdf_file_path: str) -> bool:
     """
     Convert an HTML file to PDF using playwright (headless browser).
-    Optimized to fit content in 2 pages with proper alignment.
+    Optimized to fit content in 1 page with proper alignment.
     Works on Windows, macOS, and Linux.
     
     Args:
@@ -1071,93 +1071,131 @@ def convert_html_to_pdf(html_file_path: str, pdf_file_path: str) -> bool:
             # Use Playwright with headless Chrome (works on Windows)
             with sync_playwright() as p:
                 browser = p.chromium.launch()
-                page = browser.new_page()
+                # Set viewport to A4 portrait dimensions (210mm x 297mm = 794px x 1123px at 96 DPI)
+                page = browser.new_page(viewport={"width": 794, "height": 1123})
                 page.goto(file_url, wait_until="networkidle")
                 
-                # Inject CSS to optimize for 2-page PDF layout
+                # Inject CSS to optimize for A4 portrait (210mm x 297mm) - fill entire page perfectly
                 page.add_style_tag(content="""
                     @media print {
-                        body {
-                            font-size: 12px !important;
-                            line-height: 1.4 !important;
+                        * {
+                            box-sizing: border-box;
+                        }
+                        html, body {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            height: 100% !important;
+                            width: 100% !important;
+                            font-size: 15px !important;
+                            line-height: 1.5 !important;
+                            display: flex !important;
+                            flex-direction: column !important;
+                        }
+                        body > * {
+                            flex-shrink: 0 !important;
+                        }
+                        .header {
+                            padding: 15px 0 !important;
+                            flex-shrink: 0 !important;
+                        }
+                        .header-content {
+                            padding: 0 25px !important;
                         }
                         .hero-section {
-                            padding: 30px 20px !important;
-                            min-height: 200px !important;
+                            padding: 30px 25px !important;
+                            flex-shrink: 0 !important;
+                        }
+                        .hero-content {
+                            padding: 0 !important;
                         }
                         .property-title {
-                            font-size: 32px !important;
+                            font-size: 36px !important;
                             margin-bottom: 10px !important;
                         }
                         .property-subtitle {
-                            font-size: 18px !important;
-                            margin-bottom: 10px !important;
+                            font-size: 20px !important;
+                            margin-bottom: 8px !important;
                         }
                         .property-location {
-                            font-size: 16px !important;
+                            font-size: 15px !important;
                         }
                         .image-gallery {
-                            grid-template-columns: repeat(2, 1fr) !important;
-                            gap: 10px !important;
-                            margin-bottom: 20px !important;
+                            display: none !important;
                         }
-                        .gallery-item {
-                            aspect-ratio: 4/3 !important;
+                        .container {
+                            padding: 20px 25px !important;
+                            flex: 1 1 auto !important;
+                            display: flex !important;
+                            flex-direction: column !important;
                         }
                         .details-grid {
-                            gap: 20px !important;
-                            margin-bottom: 20px !important;
+                            gap: 18px !important;
+                            margin-bottom: 18px !important;
+                            grid-template-columns: 1fr 1fr !important;
+                            flex: 1 1 auto !important;
+                            display: grid !important;
                         }
-                        .features-section, .price-card, .contact-card {
-                            padding: 20px !important;
+                        .features-section, .contact-card {
+                            padding: 18px !important;
+                            display: flex !important;
+                            flex-direction: column !important;
+                        }
+                        .price-card {
+                            padding: 15px 18px !important;
+                            display: flex !important;
+                            flex-direction: column !important;
+                            justify-content: center !important;
                         }
                         .section-title {
-                            font-size: 20px !important;
-                            margin-bottom: 15px !important;
+                            font-size: 19px !important;
+                            margin-bottom: 12px !important;
                         }
                         .tag {
-                            padding: 8px 16px !important;
+                            padding: 7px 12px !important;
                             font-size: 12px !important;
+                            margin: 4px !important;
                         }
                         .description {
                             font-size: 14px !important;
                             line-height: 1.5 !important;
-                            margin-top: 15px !important;
+                            margin-top: 12px !important;
+                            flex: 1 1 auto !important;
                         }
                         .price-value {
-                            font-size: 36px !important;
+                            font-size: 32px !important;
+                            margin: 8px 0 !important;
                         }
                         .contact-title {
-                            font-size: 18px !important;
-                            margin-bottom: 15px !important;
+                            font-size: 17px !important;
+                            margin-bottom: 12px !important;
                         }
                         .contact-item {
-                            padding: 10px !important;
+                            padding: 7px !important;
+                            font-size: 14px !important;
                         }
                         .contact-item strong, .contact-item span {
                             font-size: 14px !important;
                         }
                         .footer {
-                            padding: 20px !important;
-                            margin-top: 20px !important;
+                            padding: 15px !important;
+                            margin-top: 0 !important;
+                            flex-shrink: 0 !important;
                         }
                         .footer-brand {
-                            font-size: 24px !important;
-                        }
-                        .container {
-                            padding: 20px !important;
+                            font-size: 20px !important;
                         }
                     }
                 """)
                 
-                # Generate PDF optimized for 2 pages
+                # Generate PDF with exact A4 dimensions (210mm x 297mm) in portrait orientation
                 page.pdf(
                     path=pdf_file_path,
-                    format="A4",
+                    format="A4",  # A4: 210mm x 297mm (8.27" x 11.69")
+                    landscape=False,  # Portrait orientation
                     print_background=True,
-                    margin={"top": "0.8cm", "right": "0.8cm", "bottom": "0.8cm", "left": "0.8cm"},
+                    margin={"top": "0.1cm", "right": "0.1cm", "bottom": "0.1cm", "left": "0.1cm"},  # Minimal margins
                     prefer_css_page_size=False,
-                    scale=0.95  # Slightly scale down to ensure content fits
+                    scale=1.0  # Full scale
                 )
                 browser.close()
         else:
@@ -1500,23 +1538,21 @@ def send_whatsapp_cta_message(phone_number: str, onboarding_link: str = "") -> b
 
 def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generated_files: List[Dict], onboarding_link: str = ""):
     """
-    Send generated HTML and PDF links via WhatsApp to contact numbers in property messages.
-    Sends 3 messages in sequence:
-    1. HTML preview link
-    2. PDF link
-    3. CTA message with onboarding link
+    Send generated PDF links via WhatsApp to contact numbers found in property messages.
+    Only the PDF link is sent (no HTML preview). CTA/onboarding link is currently omitted
+    per request to send only the PDF.
     
     Args:
         property_messages: List of property message dictionaries
-        generated_files: List of dictionaries with 'html_file', 'html_url', 'pdf_file', and 'pdf_url' keys
-        onboarding_link: HomeHNI onboarding link (optional, uses placeholder if not provided)
+        generated_files: List of dictionaries with 'html_file', 'pdf_file', and 'pdf_url' keys
+        onboarding_link: Unused for now; kept for potential future CTA reinstatement
     """
     if not property_messages or not generated_files:
         print("\n⚠️  No property messages or generated files to send via WhatsApp.")
         return
     
     print(f"\n{'='*80}")
-    print(f"SENDING PROPERTY PREVIEW LINKS VIA WHATSAPP (3 MESSAGES PER PROPERTY)")
+    print(f"SENDING PROPERTY PDF LINKS VIA WHATSAPP (1 MESSAGE PER PROPERTY)")
     print(f"{'='*80}\n")
     
     # Check Twilio configuration
@@ -1532,12 +1568,8 @@ def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generate
         print("   - TWILIO_WHATSAPP_FROM (your WhatsApp Business number)")
         return
     
-    successful_html_sends = 0
-    failed_html_sends = 0
     successful_pdf_sends = 0
     failed_pdf_sends = 0
-    successful_cta_sends = 0
-    failed_cta_sends = 0
     
     try:
         from twilio.rest import Client
@@ -1551,7 +1583,6 @@ def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generate
             break
         
         file_info = generated_files[idx]
-        html_url = file_info.get('html_url')
         pdf_url = file_info.get('pdf_url')
         html_file = file_info.get('html_file', 'Unknown')
         message_text = message.get('text', '')
@@ -1561,16 +1592,12 @@ def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generate
         
         if not contact_numbers:
             print(f"⚠️  No contact number found in message #{message.get('index')}. Skipping {html_file}")
-            failed_html_sends += 1
             failed_pdf_sends += 1
-            failed_cta_sends += 1
             continue
         
-        if not html_url:
-            print(f"⚠️  No HTML URL available for {html_file}. Skipping WhatsApp send.")
-            failed_html_sends += 1
+        if not pdf_url:
+            print(f"⚠️  No PDF URL available for {html_file}. Skipping WhatsApp send.")
             failed_pdf_sends += 1
-            failed_cta_sends += 1
             continue
         
         # Send to each contact number found in the message
@@ -1588,75 +1615,29 @@ def send_webpages_via_whatsapp(property_messages: Optional[List[Dict]], generate
             else:
                 from_whatsapp = from_number
             
-            # Step 1: Send HTML preview link as first message
-            print(f"  → Sending HTML preview link...")
+            # Send PDF link as the only message
+            print(f"  → Sending PDF link...")
             try:
-                html_body = f"Hello! Here is your property listing preview: {html_url}"
+                pdf_body = f"Here is the PDF version of your property listing: {pdf_url}"
                 client.messages.create(
-                    body=html_body,
+                    body=pdf_body,
                     from_=from_whatsapp,
                     to=whatsapp_number,
                 )
-                print(f"  ✅ HTML preview link sent successfully")
-                successful_html_sends += 1
+                print(f"  ✅ PDF link sent successfully")
+                successful_pdf_sends += 1
             except Exception as exc:
-                print(f"  ❌ HTML preview link send failed: {exc}")
-                failed_html_sends += 1
-                # Continue to try PDF and CTA even if HTML fails
+                print(f"  ❌ PDF link send failed: {exc}")
                 failed_pdf_sends += 1
-                failed_cta_sends += 1
-                continue
-
-            # Delay between messages
-            time.sleep(2)
-
-            # Step 2: Send PDF link as second message
-            if pdf_url:
-                print(f"  → Sending PDF link...")
-                try:
-                    pdf_body = f"Here is the PDF version of your property listing: {pdf_url}"
-                    client.messages.create(
-                        body=pdf_body,
-                        from_=from_whatsapp,
-                        to=whatsapp_number,
-                    )
-                    print(f"  ✅ PDF link sent successfully")
-                    successful_pdf_sends += 1
-                except Exception as exc:
-                    print(f"  ❌ PDF link send failed: {exc}")
-                    failed_pdf_sends += 1
-            else:
-                print(f"  ⚠️  No PDF URL available. Skipping PDF message.")
-                failed_pdf_sends += 1
-
-            # Delay between messages
-            time.sleep(2)
-
-            # Step 3: Send CTA message as third message
-            print(f"  → Sending CTA message...")
-            cta_success = send_whatsapp_cta_message(phone_number, onboarding_link)
-            
-            if cta_success:
-                print(f"  ✅ CTA message sent successfully")
-                successful_cta_sends += 1
-            else:
-                print(f"  ❌ CTA message failed")
-                failed_cta_sends += 1
             
             # Delay between different recipients to avoid rate limiting
             time.sleep(2)
     
     print(f"\n{'='*80}")
     print(f"WHATSAPP SENDING SUMMARY:")
-    print(f"  HTML Preview Messages:")
-    print(f"    Successful: {successful_html_sends}")
-    print(f"    Failed: {failed_html_sends}")
     print(f"  PDF Messages:")
     print(f"    Successful: {successful_pdf_sends}")
     print(f"    Failed: {failed_pdf_sends}")
-    print(f"  CTA Messages:")
-    print(f"    Successful: {successful_cta_sends}")
-    print(f"    Failed: {failed_cta_sends}")
     print(f"{'='*80}\n")
 
 
@@ -1711,15 +1692,15 @@ def _build_safe_filename(message: Dict, used_names: set) -> str:
 
 def generate_webpages_for_properties(property_messages: Optional[List[Dict]], template_path: str = "sample.html"):
     """
-    Generate HTML webpages and PDFs for each identified property message.
-    Uploads both HTML and PDF files to Hostinger and returns their public URLs.
+    Generate HTML webpages (locally for conversion), convert to PDF, and upload
+    only the PDFs to Hostinger. Returns the public PDF URLs.
     
     Args:
         property_messages: List of property message dictionaries
         template_path: Path to the sample.html template file
         
     Returns:
-        List of dictionaries with 'html_file', 'html_url', 'pdf_file', and 'pdf_url' keys
+        List of dictionaries with 'html_file', 'pdf_file', and 'pdf_url' keys
     """
     if not property_messages:
         print("\n⚠️  No property messages to generate webpages for.")
@@ -1758,16 +1739,7 @@ def generate_webpages_for_properties(property_messages: Optional[List[Dict]], te
             print(f"  ⚠️  PDF conversion failed. Continuing with HTML upload only.")
             pdf_path = None
         
-        # Step 3: Upload HTML to Hostinger
-        print(f"  → Uploading HTML to Hostinger...")
-        html_url = upload_file_to_hostinger(html_path, "propertypages")
-        
-        if html_url:
-            print(f"  ✅ Successfully uploaded HTML. URL: {html_url}")
-        else:
-            print(f"  ⚠️  HTML upload failed. HTML link will not be sent via WhatsApp.")
-        
-        # Step 4: Upload PDF to Hostinger (if conversion was successful)
+        # Step 3: Upload PDF to Hostinger (if conversion was successful)
         pdf_url = None
         if pdf_path and Path(pdf_path).exists():
             print(f"  → Uploading PDF to Hostinger...")
@@ -1780,7 +1752,6 @@ def generate_webpages_for_properties(property_messages: Optional[List[Dict]], te
         
         generated_files.append({
             'html_file': html_path,
-            'html_url': html_url,
             'pdf_file': pdf_path if pdf_path and Path(pdf_path).exists() else None,
             'pdf_url': pdf_url,
         })
@@ -1790,8 +1761,6 @@ def generate_webpages_for_properties(property_messages: Optional[List[Dict]], te
     
     print(f"\n{'='*80}")
     print(f"GENERATION SUMMARY:")
-    print(f"  HTML files generated: {len([f for f in generated_files if f['html_file']])}")
-    print(f"  HTML files uploaded: {len([f for f in generated_files if f['html_url']])}")
     print(f"  PDF files generated: {len([f for f in generated_files if f['pdf_file']])}")
     print(f"  PDF files uploaded: {len([f for f in generated_files if f['pdf_url']])}")
     print(f"{'='*80}\n")

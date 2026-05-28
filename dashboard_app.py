@@ -112,6 +112,68 @@ def get_summary_by_date(date_str: str) -> List[Dict]:
         conn.close()
 
 
+def get_summary_aggregate(mode: str) -> List[Dict]:
+    """
+    Aggregate history by the requested period.
+
+    mode: one of ['day', 'date', 'week', 'month', 'year']
+    """
+    mode = mode.lower()
+    if mode not in ("day", "date", "week", "month", "year"):
+        return []
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT group_name, no_messages_sent, date_sent
+            FROM group_runs
+            """
+        )
+        rows = cur.fetchall()
+
+        aggregates = {}
+        for group_name, no_messages_sent, date_sent in rows:
+            try:
+                d = datetime.fromisoformat(date_sent).date()
+            except Exception:
+                # Skip invalid dates
+                continue
+
+            if mode in ("day", "date"):
+                period_label = d.isoformat()
+            elif mode == "week":
+                iso_year, iso_week, _ = d.isocalendar()
+                period_label = f"{iso_year}-W{iso_week:02d}"
+            elif mode == "month":
+                period_label = f"{d.year}-{d.month:02d}"
+            else:  # year
+                period_label = f"{d.year}"
+
+            key = (group_name, period_label)
+            if key not in aggregates:
+                aggregates[key] = {
+                    "group_name": group_name,
+                    "period": period_label,
+                    "total_messages": 0,
+                    "runs": 0,
+                }
+
+            aggregates[key]["total_messages"] += int(no_messages_sent)
+            aggregates[key]["runs"] += 1
+
+        # Sort by period desc, then group asc
+        result = sorted(
+            aggregates.values(),
+            key=lambda x: (x["period"], x["group_name"]),
+            reverse=True,
+        )
+        return result
+    finally:
+        conn.close()
+
+
 def clear_all_history() -> int:
     """Delete all records from the group_runs table. Returns the number of deleted rows."""
     conn = sqlite3.connect(DB_PATH)
@@ -257,6 +319,18 @@ def summary_by_date():
 
     entries = get_summary_by_date(date_str)
     return jsonify({"success": True, "entries": entries})
+
+
+@app.route("/summary/aggregate", methods=["GET"])
+def summary_aggregate():
+    """Return aggregated history by day/week/month/year."""
+    init_db()
+    mode = (request.args.get("mode") or "day").lower()
+    if mode not in ("day", "date", "week", "month", "year"):
+        return jsonify({"success": False, "error": "Invalid mode. Use day/date/week/month/year."}), 400
+
+    entries = get_summary_aggregate(mode)
+    return jsonify({"success": True, "entries": entries, "mode": mode})
 
 
 @app.route("/clear-history", methods=["POST"])
